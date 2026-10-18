@@ -52,6 +52,11 @@ class MouseHold:
 
     def __init__(self) -> None:
         self._down = dict.fromkeys(_BUTTONS, False)
+        # 物理抬起时置位。引擎在等待下一拍时拿它当取消信号，
+        # 这样按住模式下松手能立刻停，不用等完整个点击间隔。
+        self._up = {name: threading.Event() for name in _BUTTONS}
+        for event in self._up.values():
+            event.set()
         self._hook = None
         self._proc = None    # 必须持有回调引用：被 GC 回收后回调变野指针，进程直接崩
         self._thread: threading.Thread | None = None
@@ -61,6 +66,18 @@ class MouseHold:
     def down(self, button: str = "left") -> bool:
         return self._down.get(button, False)
 
+    def up_event(self, button: str = "left") -> threading.Event:
+        """该按键物理抬起时被置位、按下时被清除的事件。"""
+        return self._up.get(button, self._up["left"])
+
+    def installed(self) -> bool:
+        return bool(self._hook)
+
+    def wake_all(self) -> None:
+        """把所有等待中的取消事件唤醒（退出时用）。"""
+        for event in self._up.values():
+            event.set()
+
     def _apply(self, msg: int, injected: bool) -> None:
         """喂一条鼠标消息。注入事件直接忽略 —— 这正是本模块存在的理由。"""
         if injected:
@@ -68,8 +85,10 @@ class MouseHold:
         for name in _BUTTONS:
             if msg == _DOWN[name]:
                 self._down[name] = True
+                self._up[name].clear()
             elif msg == _UP[name]:
                 self._down[name] = False
+                self._up[name].set()
 
     def _callback(self, code, wparam, lparam):
         if code == HC_ACTION:
@@ -114,3 +133,4 @@ class MouseHold:
         self._thread_id = 0
         for name in _BUTTONS:
             self._down[name] = False
+        self.wake_all()

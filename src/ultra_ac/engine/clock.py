@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import ctypes
+import threading
 import time
 from time import perf_counter
 
@@ -35,16 +36,30 @@ class Clock:
             self._raised = False
 
     @staticmethod
-    def wait_until(target: float) -> None:
-        """等到 `perf_counter()` 到达 target。"""
+    def wait_until(target: float, cancel: threading.Event | None = None) -> bool:
+        """等到 `perf_counter()` 到达 target。
+
+        `cancel` 被置位时立刻返回 False —— 点击引擎要靠它做到"一按停止
+        就真的停下"，而不是等完当前这一拍。睡眠阶段直接等事件唤醒，
+        自旋阶段（最多约 3ms）不再逐个循环检查，避免在 10000 CPS 下
+        白添开销：那点延迟人眼根本分辨不出。
+        返回 True 表示等到了，False 表示被取消。
+        """
         while True:
+            if cancel is not None and cancel.is_set():
+                return False
             remain = target - perf_counter()
             if remain <= 0.0:
-                return
+                return True
             if remain > SPIN_WINDOW + SLEEP_SLACK:
-                time.sleep(remain - SPIN_WINDOW)
+                nap = remain - SPIN_WINDOW
+                if cancel is not None:
+                    if cancel.wait(nap):
+                        return False
+                else:
+                    time.sleep(nap)
             else:
                 while perf_counter() < target:
                     pass
-                return
+                return True
 

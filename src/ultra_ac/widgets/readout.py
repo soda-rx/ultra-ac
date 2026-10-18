@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QRectF, Qt, QRegularExpression, Signal
-from PySide6.QtGui import (QFontMetricsF, QPainter,
+from PySide6.QtGui import (QColor, QFontMetricsF, QPainter, QPalette,
                            QRegularExpressionValidator)
 from PySide6.QtWidgets import QApplication, QLineEdit, QWidget
 
@@ -48,7 +48,28 @@ class RateDisplay(ThemedWidget):
         self._edit.textChanged.connect(self._on_edit_text)
         self._edit.installEventFilter(self)
         self._edit.hide()
+        self._apply_palette()
         self._sync_edit_geometry()
+
+    def _apply_palette(self) -> None:
+        """编辑框是系统控件，必须显式给它一套跟随当前主题的调色板。
+
+        否则它会沿用系统默认配色：浅色模式下白字落在浅色卡片上，
+        输入自定义 CPS 时数字和背景糊成一片，根本看不清。
+        """
+        s = THEME.s
+        qp = self._edit.palette()
+        qp.setColor(QPalette.Text, qc(s.on_surface if self.isEnabled()
+                                      else s.on_surface_variant))
+        qp.setColor(QPalette.Base, QColor(Qt.transparent))
+        qp.setColor(QPalette.Highlight, qc(s.primary))
+        qp.setColor(QPalette.HighlightedText, qc(s.on_primary))
+        qp.setColor(QPalette.PlaceholderText, qc(s.on_surface_variant))
+        self._edit.setPalette(qp)
+
+    def _on_theme(self) -> None:
+        super()._on_theme()
+        self._apply_palette()
 
     def value(self) -> float:
         return self._value
